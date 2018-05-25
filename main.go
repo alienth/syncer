@@ -29,12 +29,10 @@ var source location
 func main() {
 	var err error
 	source = location{Path: "/tmp/boo"}
-	source.Manifest = make([]interface{}, 0)
 	if source.Service, err = os.Lstat(source.Path); err != nil {
 		log.Fatal(err)
 	}
 	source.buildManifest()
-	log.Print(source.Manifest)
 	recurse := true
 
 	watcher, _ := fsnotify.NewWatcher()
@@ -150,13 +148,22 @@ func (l *location) buildManifest() {
 			log.Fatal(err)
 		}
 	case os.FileInfo:
-		files, err := ioutil.ReadDir(svc.Name())
-		if err != nil {
-			log.Fatal(err)
-		}
+		buildDirManifest(&l.Manifest, l.Path)
+	default:
+		log.Fatal("unknown type")
+	}
+}
 
-		for _, file := range files {
-			l.Manifest = append(l.Manifest, file)
+func buildDirManifest(manifest *[]interface{}, dir string) {
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, file := range files {
+		*manifest = append(*manifest, file)
+		if file.IsDir() {
+			buildDirManifest(manifest, dir+"/"+file.Name())
 		}
 	}
 }
