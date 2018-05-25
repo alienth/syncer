@@ -27,8 +27,14 @@ import (
 var source location
 
 func main() {
+	var err error
 	source = location{Path: "/tmp/boo"}
 	source.Manifest = make([]interface{}, 0)
+	if source.Service, err = os.Lstat(source.Path); err != nil {
+		log.Fatal(err)
+	}
+	source.buildManifest()
+	log.Print(source.Manifest)
 	recurse := true
 
 	watcher, _ := fsnotify.NewWatcher()
@@ -80,6 +86,12 @@ type location struct {
 	Bucket   string
 	Path     string
 	Manifest []interface{}
+}
+
+type file struct {
+	Name     string
+	Path     string
+	FileInfo os.FileInfo
 }
 
 func (l *location) handleEvent(event fsnotify.Event) {
@@ -136,6 +148,15 @@ func (l *location) buildManifest() {
 		var err error
 		if err = svc.ListObjectsPages(&foo, f); err != nil {
 			log.Fatal(err)
+		}
+	case os.FileInfo:
+		files, err := ioutil.ReadDir(svc.Name())
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, file := range files {
+			l.Manifest = append(l.Manifest, file)
 		}
 	}
 }
