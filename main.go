@@ -25,20 +25,20 @@ import (
 // Sign contents.
 
 func main() {
-	source := "/tmp/boo"
+	source := location{Path: "/tmp/boo"}
 	recurse := true
 
 	watcher, _ := fsnotify.NewWatcher()
-	watcher.Add(source)
+	watcher.Add(source.Path)
 	if recurse {
-		files, err := ioutil.ReadDir(source)
+		files, err := ioutil.ReadDir(source.Path)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		for _, f := range files {
 			if f.IsDir() {
-				watcher.Add(source + "/" + f.Name())
+				watcher.Add(source.Path + "/" + f.Name())
 			}
 		}
 	}
@@ -53,10 +53,10 @@ func main() {
 	// /tmp/bar/foo/bar -> s3://alienthtest/foo/bar
 
 	svc := s3.New(sess)
+	destination := location{Bucket: "alienthtest", Service: svc}
 	for {
 		select {
 		case event := <-watcher.Events:
-			bucket := "alienthtest"
 			fi, _ := os.Lstat(event.Name)
 			if fi.IsDir() {
 				if recurse {
@@ -64,18 +64,32 @@ func main() {
 				}
 				continue
 			}
-			f, _ := os.Open(event.Name)
-			log.Println(event)
-			foo := s3.PutObjectInput{
-				Bucket: aws.String(bucket),
-				Body:   f,
-				Key:    aws.String(strings.TrimPrefix(event.Name, source)),
-			}
-			_, err := svc.PutObject(&foo)
-			if err != nil {
-				log.Fatal(err)
-			}
-
+			destination.handleEvent(source, event)
 		}
 	}
+}
+
+type location struct {
+	Service interface{}
+	Bucket  string
+	Path    string
+}
+
+func (l *location) handleEvent(source location, event fsnotify.Event) {
+	switch svc := l.Service.(type) {
+	case *s3.S3:
+		f, _ := os.Open(event.Name)
+		foo := s3.PutObjectInput{
+			Bucket: aws.String(l.Bucket),
+			Body:   f,
+			Key:    aws.String(strings.TrimPrefix(event.Name, source.Path)),
+		}
+		_, err := svc.PutObject(&foo)
+		if err != nil {
+			log.Fatal(err)
+		}
+	default:
+		log.Fatal("unknown type")
+	}
+
 }
