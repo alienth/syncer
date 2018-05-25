@@ -13,6 +13,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
+// Only syncs directories.
+
 // Continuous sync in either direction
 // Build manifest and store that remotely.
 // option - build manifest every X minutes, or every X events
