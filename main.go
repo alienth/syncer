@@ -117,3 +117,17 @@ func (l *location) s3HandleEvent(svc *s3.S3, event fsnotify.Event) {
 		log.Println("Ignoring ", event)
 	}
 }
+
+func (l *location) buildManifest() {
+	switch svc := l.Service.(type) {
+	case *s3.S3:
+		foo := s3.ListObjectsInput{}
+		foo.Bucket = aws.String(l.Bucket)
+		foo.Prefix = aws.String(l.Path)
+		f := func(list *s3.ListObjectsOutput, lastPage bool) bool {
+			return true
+
+		}
+		svc.ListObjectsPages(&foo, f)
+	}
+}
