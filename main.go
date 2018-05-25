@@ -58,6 +58,7 @@ func main() {
 
 	svc := s3.New(sess)
 	destination := location{Bucket: "alienthtest", Service: svc}
+	destination.buildManifest()
 	for {
 		select {
 		case event := <-watcher.Events:
@@ -125,9 +126,16 @@ func (l *location) buildManifest() {
 		foo.Bucket = aws.String(l.Bucket)
 		foo.Prefix = aws.String(l.Path)
 		f := func(list *s3.ListObjectsOutput, lastPage bool) bool {
-			return true
+			for _, o := range list.Contents {
+				l.Manifest = append(l.Manifest, o)
+			}
 
+			// Fetch all pages
+			return true
 		}
-		svc.ListObjectsPages(&foo, f)
+		var err error
+		if err = svc.ListObjectsPages(&foo, f); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
