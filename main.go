@@ -26,6 +26,7 @@ import (
 
 func main() {
 	source := location{Path: "/tmp/boo"}
+	source.Manifest = make([]interface{}, 0)
 	recurse := true
 
 	watcher, _ := fsnotify.NewWatcher()
@@ -37,6 +38,7 @@ func main() {
 		}
 
 		for _, f := range files {
+			source.Manifest = append(source.Manifest, f)
 			if f.IsDir() {
 				watcher.Add(source.Path + "/" + f.Name())
 			}
@@ -59,6 +61,7 @@ func main() {
 		case event := <-watcher.Events:
 			fi, _ := os.Lstat(event.Name)
 			if fi.IsDir() {
+				source.Manifest = append(source.Manifest, fi)
 				if recurse {
 					watcher.Add(event.Name)
 				}
@@ -70,9 +73,10 @@ func main() {
 }
 
 type location struct {
-	Service interface{}
-	Bucket  string
-	Path    string
+	Service  interface{}
+	Bucket   string
+	Path     string
+	Manifest []interface{}
 }
 
 func (l *location) handleEvent(source location, event fsnotify.Event) {
