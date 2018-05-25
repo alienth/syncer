@@ -24,8 +24,10 @@ import (
 // Restore a directory to a given manifest.
 // Sign contents.
 
+var source location
+
 func main() {
-	source := location{Path: "/tmp/boo"}
+	source = location{Path: "/tmp/boo"}
 	source.Manifest = make([]interface{}, 0)
 	recurse := true
 
@@ -67,7 +69,7 @@ func main() {
 				}
 				continue
 			}
-			destination.handleEvent(source, event)
+			destination.handleEvent(event)
 		}
 	}
 }
@@ -79,21 +81,39 @@ type location struct {
 	Manifest []interface{}
 }
 
-func (l *location) handleEvent(source location, event fsnotify.Event) {
+func (l *location) handleEvent(event fsnotify.Event) {
 	switch svc := l.Service.(type) {
 	case *s3.S3:
+		l.s3HandleEvent(svc, event)
+	default:
+		log.Fatal("unknown type")
+	}
+
+}
+
+func (l *location) s3HandleEvent(svc *s3.S3, event fsnotify.Event) {
+	key := aws.String(strings.TrimPrefix(event.Name, source.Path))
+	if event.Op == fsnotify.Remove {
+		foo := s3.DeleteObjectInput{
+			Bucket: aws.String(l.Bucket),
+			Key:    key}
+
+		_, err := svc.DeleteObject(&foo)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else if event.Op == fsnotify.Write || event.Op == fsnotify.Create {
 		f, _ := os.Open(event.Name)
 		foo := s3.PutObjectInput{
 			Bucket: aws.String(l.Bucket),
 			Body:   f,
-			Key:    aws.String(strings.TrimPrefix(event.Name, source.Path)),
+			Key:    key,
 		}
 		_, err := svc.PutObject(&foo)
 		if err != nil {
 			log.Fatal(err)
 		}
-	default:
-		log.Fatal("unknown type")
+	} else {
+		log.Println("Ignoring ", event)
 	}
-
 }
