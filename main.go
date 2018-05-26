@@ -27,6 +27,7 @@ import (
 // Sign contents.
 
 var source location
+var delete = true
 
 func main() {
 	var err error
@@ -66,6 +67,7 @@ func main() {
 	destination := location{Bucket: "alienthtest", Service: svc}
 	destination.buildManifest()
 	destination.listManifest()
+	sync(source, destination)
 	for {
 		select {
 		case event := <-watcher.Events:
@@ -106,21 +108,8 @@ func constructFile(event fsnotify.Event) file {
 	return f
 }
 
-func (l *location) Delete(key string) {
-
-}
-
 func (l *location) s3HandleEvent(svc *s3.S3, event fsnotify.Event) {
-	key := aws.String(strings.TrimPrefix(event.Name, source.Path))
 	if event.Op == fsnotify.Remove {
-		foo := s3.DeleteObjectInput{
-			Bucket: aws.String(l.Bucket),
-			Key:    key}
-
-		_, err := svc.DeleteObject(&foo)
-		if err != nil {
-			log.Fatal(err)
-		}
 	} else if event.Op == fsnotify.Write || event.Op == fsnotify.Create {
 		// l.Put(
 	} else {
@@ -204,8 +193,23 @@ func (l *location) Put(key string, f file) {
 		if err != nil {
 			log.Fatal(err)
 		}
+		l.Manifest[key] = f
 	default:
 		log.Fatal("can't handle")
+	}
+}
+
+func (l *location) Delete(key string) {
+	switch svc := l.Service.(type) {
+	case *s3.S3:
+		foo := s3.DeleteObjectInput{
+			Bucket: aws.String(l.Bucket),
+			Key:    aws.String(key)}
+
+		_, err := svc.DeleteObject(&foo)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 
@@ -217,6 +221,14 @@ func sync(source, destination location) {
 		}
 	}
 
+	// for each object in the destination not in the source, delete it from the destination
+	if delete {
+		for key, _ := range destination.Manifest {
+			if _, ok := source.Manifest[key]; !ok {
+				destination.Delete(key)
+			}
+		}
+	}
 }
 
 type file struct {
