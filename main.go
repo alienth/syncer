@@ -33,6 +33,7 @@ func main() {
 		log.Fatal(err)
 	}
 	source.buildManifest()
+	source.listManifest()
 	recurse := true
 
 	watcher, _ := fsnotify.NewWatcher()
@@ -63,6 +64,7 @@ func main() {
 	svc := s3.New(sess)
 	destination := location{Bucket: "alienthtest", Service: svc}
 	destination.buildManifest()
+	destination.listManifest()
 	for {
 		select {
 		case event := <-watcher.Events:
@@ -132,10 +134,10 @@ func (l *location) s3HandleEvent(svc *s3.S3, event fsnotify.Event) {
 func (l *location) buildManifest() {
 	switch svc := l.Service.(type) {
 	case *s3.S3:
-		foo := s3.ListObjectsInput{}
+		foo := s3.ListObjectsV2Input{}
 		foo.Bucket = aws.String(l.Bucket)
 		foo.Prefix = aws.String(l.Path)
-		f := func(list *s3.ListObjectsOutput, lastPage bool) bool {
+		f := func(list *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, o := range list.Contents {
 				l.Manifest = append(l.Manifest, o)
 			}
@@ -144,7 +146,7 @@ func (l *location) buildManifest() {
 			return true
 		}
 		var err error
-		if err = svc.ListObjectsPages(&foo, f); err != nil {
+		if err = svc.ListObjectsV2Pages(&foo, f); err != nil {
 			log.Fatal(err)
 		}
 	case os.FileInfo:
@@ -164,6 +166,23 @@ func (l *location) buildDirManifest(dir string) {
 		l.Manifest = append(l.Manifest, file)
 		if file.IsDir() {
 			l.buildDirManifest(dir + "/" + file.Name())
+		}
+	}
+}
+
+func (l *location) listManifest() {
+	switch svc := l.Service.(type) {
+	case *s3.S3:
+		_ = svc.Config
+		for _, i := range l.Manifest {
+			o := i.(*s3.Object)
+			log.Println(*o.Key, *o.Size, *o.LastModified)
+		}
+
+	case os.FileInfo:
+		for _, i := range l.Manifest {
+			fi := i.(os.FileInfo)
+			log.Println(fi.Name(), fi.Size(), fi.ModTime())
 		}
 	}
 }
