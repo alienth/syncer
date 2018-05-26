@@ -47,7 +47,6 @@ func main() {
 		}
 
 		for _, f := range files {
-			source.Manifest = append(source.Manifest, f)
 			if f.IsDir() {
 				watcher.Add(source.Path + "/" + f.Name())
 			}
@@ -72,7 +71,6 @@ func main() {
 		case event := <-watcher.Events:
 			fi, _ := os.Lstat(event.Name)
 			if fi.IsDir() {
-				source.Manifest = append(source.Manifest, fi)
 				if recurse {
 					watcher.Add(event.Name)
 				}
@@ -87,7 +85,7 @@ type location struct {
 	Service  interface{}
 	Bucket   string
 	Path     string
-	Manifest []interface{}
+	Manifest map[string]file
 }
 
 func (l *location) handleEvent(event fsnotify.Event) {
@@ -112,22 +110,14 @@ func (l *location) s3HandleEvent(svc *s3.S3, event fsnotify.Event) {
 			log.Fatal(err)
 		}
 	} else if event.Op == fsnotify.Write || event.Op == fsnotify.Create {
-		f, _ := os.Open(event.Name)
-		foo := s3.PutObjectInput{
-			Bucket: aws.String(l.Bucket),
-			Body:   f,
-			Key:    key,
-		}
-		_, err := svc.PutObject(&foo)
-		if err != nil {
-			log.Fatal(err)
-		}
+		// l.Put(
 	} else {
 		log.Println("Ignoring ", event)
 	}
 }
 
 func (l *location) buildManifest() {
+	l.Manifest = make(map[string]file)
 	switch svc := l.Service.(type) {
 	case *s3.S3:
 		foo := s3.ListObjectsV2Input{}
@@ -135,7 +125,12 @@ func (l *location) buildManifest() {
 		foo.Prefix = aws.String(l.Path)
 		f := func(list *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, o := range list.Contents {
-				l.Manifest = append(l.Manifest, o)
+				var f file
+				f.Name = *o.Key
+				f.Size = int(*o.Size)
+				f.Object = o
+				f.LastModified = *o.LastModified
+				l.Manifest[*o.Key] = f
 			}
 
 			// Fetch all pages
@@ -158,33 +153,50 @@ func (l *location) buildDirManifest(dir string) {
 		log.Fatal(err)
 	}
 
-	for _, file := range files {
-		l.Manifest = append(l.Manifest, file)
-		if file.IsDir() {
-			l.buildDirManifest(dir + "/" + file.Name())
+	for _, fi := range files {
+		if fi.IsDir() {
+			l.buildDirManifest(dir + "/" + fi.Name())
+		} else {
+			var f file
+			f.Name = fi.Name()
+			f.Size = int(fi.Size())
+			f.Object = fi
+			f.Path = dir
+			f.LastModified = fi.ModTime()
+			l.Manifest[dir+"/"+fi.Name()] = f
 		}
 	}
 }
 
 func (l *location) listManifest() {
+	for _, f := range l.Manifest {
+		log.Println(f.Name, f.Size, f.LastModified)
+	}
+}
+
+func (l *location) Put(f file) {
+	reader := f.Open()
 	switch svc := l.Service.(type) {
 	case *s3.S3:
-		_ = svc.Config
-		for _, i := range l.Manifest {
-			o := i.(*s3.Object)
-			log.Println(*o.Key, *o.Size, *o.LastModified)
+		foo := s3.PutObjectInput{
+			Bucket: aws.String(l.Bucket),
+			Body:   reader,
+			Key:    key,
 		}
-
-	case os.FileInfo:
-		for _, i := range l.Manifest {
-			fi := i.(os.FileInfo)
-			log.Println(fi.Name(), fi.Size(), fi.ModTime())
+		_, err := svc.PutObject(&foo)
+		if err != nil {
+			log.Fatal(err)
 		}
 	}
 }
 
 func sync(source, destination location) {
 	// for each object in the source, push it to the destination
+	for key, f := range source.Manifest {
+		if destinationF, ok := destination.Manifest[key]; !ok {
+			destination.Put(f)
+		}
+	}
 
 }
 
