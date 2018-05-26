@@ -1,11 +1,13 @@
 package main
 
 import (
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	// "path/filepath"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -86,12 +88,6 @@ type location struct {
 	Bucket   string
 	Path     string
 	Manifest []interface{}
-}
-
-type file struct {
-	Name     string
-	Path     string
-	FileInfo os.FileInfo
 }
 
 func (l *location) handleEvent(event fsnotify.Event) {
@@ -185,4 +181,30 @@ func (l *location) listManifest() {
 			log.Println(fi.Name(), fi.Size(), fi.ModTime())
 		}
 	}
+}
+
+func sync(source, destination location) {
+	// for each object in the source, push it to the destination
+
+}
+
+type file struct {
+	Name         string
+	Path         string
+	LastModified time.Time
+	Size         int
+	Object       interface{}
+}
+
+func (f *file) Open() io.ReadSeeker {
+	switch o := f.Object.(type) {
+	case os.FileInfo:
+		_ = o
+		r, err := os.Open(f.Path + "/" + f.Name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return r
+	}
+	return nil
 }
