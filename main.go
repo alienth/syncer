@@ -148,22 +148,22 @@ func (l *location) buildManifest() {
 			log.Fatal(err)
 		}
 	case os.FileInfo:
-		buildDirManifest(&l.Manifest, l.Path)
+		l.buildDirManifest(l.Path)
 	default:
 		log.Fatal("unknown type")
 	}
 }
 
-func buildDirManifest(manifest *[]interface{}, dir string) {
+func (l *location) buildDirManifest(dir string) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for _, file := range files {
-		*manifest = append(*manifest, file)
+		l.Manifest = append(l.Manifest, file)
 		if file.IsDir() {
-			buildDirManifest(manifest, dir+"/"+file.Name())
+			l.buildDirManifest(dir + "/" + file.Name())
 		}
 	}
 }
