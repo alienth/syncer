@@ -84,8 +84,8 @@ func main() {
 type location struct {
 	Service  interface{}
 	Bucket   string
-	Path     string // the base path which we manage objects from
-	Manifest map[string]file
+	Path     string          // the base path which we manage objects from
+	Manifest map[string]file // the key is the object relative to the Path
 }
 
 func (l *location) handleEvent(event fsnotify.Event) {
@@ -138,11 +138,14 @@ func (l *location) buildManifest() {
 		f := func(list *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, o := range list.Contents {
 				var f file
-				f.Name = *o.Key
+				s3Key := *o.Key
+				f.Name = filepath.Base(s3Key)
+				f.Path = filepath.Dir(s3Key)
 				f.Size = int(*o.Size)
 				f.Object = o
 				f.LastModified = *o.LastModified
-				l.Manifest[*o.Key] = f
+				key := "/" + strings.TrimPrefix(s3Key, l.Path)
+				l.Manifest[key] = f
 			}
 
 			// Fetch all pages
@@ -183,8 +186,8 @@ func (l *location) buildDirManifest(dir string) {
 }
 
 func (l *location) listManifest() {
-	for _, f := range l.Manifest {
-		log.Println(f.Name, f.Size, f.LastModified)
+	for key, f := range l.Manifest {
+		log.Println(key, f.Name, f.Size, f.LastModified)
 	}
 }
 
