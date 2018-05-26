@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	// "path/filepath"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -84,17 +84,29 @@ func main() {
 type location struct {
 	Service  interface{}
 	Bucket   string
-	Path     string
+	Path     string // the base path which we manage objects from
 	Manifest map[string]file
 }
 
 func (l *location) handleEvent(event fsnotify.Event) {
-	switch svc := l.Service.(type) {
-	case *s3.S3:
-		l.s3HandleEvent(svc, event)
-	default:
-		log.Fatal("unknown type")
+	switch event.Op {
+	case fsnotify.Write, fsnotify.Create:
+		f := constructFile(event)
+		key := strings.TrimPrefix(f.Name, l.Path)
+		l.Put(key, f)
+	case fsnotify.Remove:
+		l.Delete(event.Name)
 	}
+
+}
+
+func constructFile(event fsnotify.Event) file {
+	var f file
+	f.Name = filepath.Base(event.Name)
+	return f
+}
+
+func (l *location) Delete(key string) {
 
 }
 
@@ -158,12 +170,14 @@ func (l *location) buildDirManifest(dir string) {
 			l.buildDirManifest(dir + "/" + fi.Name())
 		} else {
 			var f file
+			key := dir + "/" + fi.Name()
+			key = filepath.Clean(strings.TrimPrefix(key, l.Path))
 			f.Name = fi.Name()
 			f.Size = int(fi.Size())
 			f.Object = fi
 			f.Path = dir
 			f.LastModified = fi.ModTime()
-			l.Manifest[dir+"/"+fi.Name()] = f
+			l.Manifest[key] = f
 		}
 	}
 }
@@ -174,27 +188,29 @@ func (l *location) listManifest() {
 	}
 }
 
-func (l *location) Put(f file) {
+func (l *location) Put(key string, f file) {
 	reader := f.Open()
 	switch svc := l.Service.(type) {
 	case *s3.S3:
 		foo := s3.PutObjectInput{
 			Bucket: aws.String(l.Bucket),
 			Body:   reader,
-			Key:    key,
+			Key:    aws.String(key),
 		}
 		_, err := svc.PutObject(&foo)
 		if err != nil {
 			log.Fatal(err)
 		}
+	default:
+		log.Fatal("can't handle")
 	}
 }
 
 func sync(source, destination location) {
 	// for each object in the source, push it to the destination
 	for key, f := range source.Manifest {
-		if destinationF, ok := destination.Manifest[key]; !ok {
-			destination.Put(f)
+		if _, ok := destination.Manifest[key]; !ok {
+			destination.Put(key, f)
 		}
 	}
 
@@ -202,7 +218,7 @@ func sync(source, destination location) {
 
 type file struct {
 	Name         string
-	Path         string
+	Path         string // the absolute path
 	LastModified time.Time
 	Size         int
 	Object       interface{}
