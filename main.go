@@ -216,8 +216,14 @@ func (l *location) Delete(key string) {
 func sync(source, destination location) {
 	// for each object in the source, push it to the destination
 	for key, f := range source.Manifest {
-		if _, ok := destination.Manifest[key]; !ok {
+		if destF, ok := destination.Manifest[key]; !ok {
+			log.Printf("pushing missing %s to destination.", key)
 			destination.Put(key, f)
+		} else {
+			if f.Size != destF.Size {
+				log.Printf("pushing mismatched %s to destination.", key)
+				destination.Put(key, f)
+			}
 		}
 	}
 
@@ -225,6 +231,7 @@ func sync(source, destination location) {
 	if delete {
 		for key, _ := range destination.Manifest {
 			if _, ok := source.Manifest[key]; !ok {
+				log.Printf("deleting %s from destination.", key)
 				destination.Delete(key)
 			}
 		}
