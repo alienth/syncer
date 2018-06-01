@@ -9,10 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alienth/fastlyctl/util"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/fsnotify/fsnotify"
+	"github.com/urfave/cli"
 )
 
 // Only syncs directories.
@@ -29,9 +31,59 @@ import (
 // syncer sync /tmp/boo s3://alienthtest/
 
 var source location
-var delete = true
 
 func main() {
+	app := cli.NewApp()
+	app.Name = "syncer"
+
+	app.Flags = []cli.Flag{
+		cli.BoolFlag{
+			Name:  "verbose, v",
+			Usage: "Print detailed info.",
+		},
+	}
+
+	app.Commands = []cli.Command{
+		cli.Command{
+			Name:      "sync",
+			Aliases:   []string{"p"},
+			Usage:     "Continuously copy all objects from source to the destination.",
+			ArgsUsage: "<SOURCE> <DESTINATION>...",
+			Flags: []cli.Flag{
+				cli.BoolFlag{
+					Name:  "noop, n",
+					Usage: "Push new config versions, but do not activate.",
+				},
+				cli.BoolFlag{
+					Name:  "delete, d",
+					Usage: "Delete objects in destination that aren't present in the source.",
+				},
+				cli.BoolFlag{
+					Name:  "one-time",
+					Usage: "Only sync one-time rather than continuously.",
+				},
+			},
+			Before: func(c *cli.Context) error {
+				if !util.IsInteractive() && !c.GlobalBool("assume-yes") {
+					return cli.NewExitError(util.ErrNonInteractive.Error(), -1)
+				}
+				if c.Bool("noop") {
+					log.Println("!!! Running in no-op mode.")
+				}
+				return nil
+			},
+			Action: sync,
+		},
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Printf("Error starting app: %s", err)
+	}
+
+}
+
+func sync(c *cli.Context) {
 	var err error
 	source = location{Path: "/tmp/boo"}
 	if source.Service, err = os.Lstat(source.Path); err != nil {
@@ -69,7 +121,7 @@ func main() {
 	destination := location{Bucket: "alienthtest", Service: svc}
 	destination.buildManifest()
 	destination.listManifest()
-	sync(source, destination)
+	oneTimeSync(c, source, destination)
 	for {
 		select {
 		case event := <-watcher.Events:
@@ -216,7 +268,7 @@ func (l *location) Delete(key string) {
 	}
 }
 
-func sync(source, destination location) {
+func oneTimeSync(c *cli.Context, source, destination location) {
 	// for each object in the source, push it to the destination
 	for key, f := range source.Manifest {
 		if destF, ok := destination.Manifest[key]; !ok {
@@ -231,7 +283,7 @@ func sync(source, destination location) {
 	}
 
 	// for each object in the destination not in the source, delete it from the destination
-	if delete {
+	if c.Bool("delete") {
 		for key, _ := range destination.Manifest {
 			if _, ok := source.Manifest[key]; !ok {
 				log.Printf("deleting %s from destination.", key)
