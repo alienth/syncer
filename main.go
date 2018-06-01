@@ -26,6 +26,8 @@ import (
 // Restore a directory to a given manifest.
 // Sign contents.
 
+// syncer sync /tmp/boo s3://alienthtest/
+
 var source location
 var delete = true
 
@@ -54,7 +56,7 @@ func main() {
 		}
 	}
 
-	sess, err := session.NewSession()
+	sess, err := session.NewSessionWithOptions(session.Options{SharedConfigState: session.SharedConfigEnable})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -95,6 +97,7 @@ func (l *location) handleEvent(event fsnotify.Event) {
 	case fsnotify.Write, fsnotify.Create:
 		f := constructFile(event)
 		key := strings.TrimPrefix(f.Name, l.Path)
+		// Need to ensure we retry this if there is a transient failure
 		l.Put(key, f)
 	case fsnotify.Remove:
 		l.Delete(event.Name)
