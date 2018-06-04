@@ -314,6 +314,12 @@ func (l *location) Delete(key string) {
 		if err != nil {
 			log.Fatal(err)
 		}
+	case os.FileInfo:
+		if err := os.Remove(l.Path + "/" + key); err != nil {
+			log.Fatal(err)
+		}
+	default:
+		log.Fatal("can't handle")
 	}
 }
 
