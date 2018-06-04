@@ -184,13 +184,25 @@ func (l *location) handleEvent(event fsnotify.Event) {
 
 }
 
-func constructFile(event fsnotify.Event) file {
-	var err error
+func constructFile(input interface{}) file {
 	var f file
-	f.Name = filepath.Base(event.Name)
-	f.Object, err = os.Stat(event.Name)
-	if err != nil {
-		log.Fatal(err)
+	switch i := input.(type) {
+	case fsnotify.Event:
+		var err error
+		f.Name = filepath.Base(i.Name)
+		f.Path = filepath.Dir(i.Name)
+		f.Object, err = os.Stat(i.Name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return f
+	case *s3.Object:
+		s3Key := *i.Key
+		f.Name = filepath.Base(s3Key)
+		f.Path = filepath.Dir(s3Key)
+		f.Size = int(*i.Size)
+		f.Object = i
+		f.LastModified = *i.LastModified
 	}
 	return f
 }
@@ -213,14 +225,8 @@ func (l *location) buildManifest() {
 		foo.Prefix = aws.String(l.Path)
 		f := func(list *s3.ListObjectsV2Output, lastPage bool) bool {
 			for _, o := range list.Contents {
-				var f file
-				s3Key := *o.Key
-				f.Name = filepath.Base(s3Key)
-				f.Path = filepath.Dir(s3Key)
-				f.Size = int(*o.Size)
-				f.Object = o
-				f.LastModified = *o.LastModified
-				key := "/" + strings.TrimPrefix(s3Key, l.Path)
+				f := constructFile(o)
+				key := "/" + strings.TrimPrefix(*o.Key, l.Path)
 				l.Manifest[key] = f
 			}
 
