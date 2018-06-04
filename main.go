@@ -4,6 +4,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,10 +38,10 @@ func main() {
 	app.Name = "syncer"
 
 	app.Flags = []cli.Flag{
-		cli.BoolFlag{
-			Name:  "verbose, v",
-			Usage: "Print detailed info.",
-		},
+		// cli.BoolFlag{
+		// 	Name:  "verbose, v",
+		// 	Usage: "Print detailed info.",
+		// },
 	}
 
 	app.Commands = []cli.Command{
@@ -84,13 +85,13 @@ func main() {
 }
 
 func sync(c *cli.Context) {
-	var err error
-	source = location{Path: "/tmp/boo"}
-	if source.Service, err = os.Lstat(source.Path); err != nil {
-		log.Fatal(err)
-	}
+	source, destination := getLocations(c)
+
 	source.buildManifest()
 	source.listManifest()
+	destination.buildManifest()
+	destination.listManifest()
+
 	recurse := true
 
 	watcher, _ := fsnotify.NewWatcher()
@@ -108,19 +109,10 @@ func sync(c *cli.Context) {
 		}
 	}
 
-	sess, err := session.NewSessionWithOptions(session.Options{SharedConfigState: session.SharedConfigEnable})
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	// /tmp/bar/        -> s3://alienthtest/
 	// /tmp/bar/foo     -> s3://alienthtest/foo
 	// /tmp/bar/foo/bar -> s3://alienthtest/foo/bar
 
-	svc := s3.New(sess)
-	destination := location{Bucket: "alienthtest", Service: svc}
-	destination.buildManifest()
-	destination.listManifest()
 	oneTimeSync(c, source, destination)
 	for {
 		select {
@@ -135,6 +127,41 @@ func sync(c *cli.Context) {
 			destination.handleEvent(event)
 		}
 	}
+}
+
+// Takes in a cli context, parses the args, and returns the source and destination locations
+func getLocations(c *cli.Context) (location, location) {
+	if len(c.Args()) != 2 {
+		log.Fatal("must pass 2 args")
+	}
+
+	results := make([]location, 2)
+
+	for i, param := range c.Args() {
+		u, err := url.Parse(param)
+		log.Println(param)
+		if err != nil {
+		}
+		if u.Scheme == "" {
+			// Should be a directory?
+			loc := location{Path: param}
+			if loc.Service, err = os.Lstat(param); err != nil {
+				log.Fatal(err)
+			}
+			results[i] = loc
+
+		} else if u.Scheme == "s3" {
+			sess, err := session.NewSessionWithOptions(session.Options{SharedConfigState: session.SharedConfigEnable})
+			if err != nil {
+				log.Fatal(err)
+			}
+			svc := s3.New(sess)
+			loc := location{Bucket: u.Host, Service: svc}
+			results[i] = loc
+		}
+	}
+
+	return results[0], results[1]
 }
 
 type location struct {
@@ -212,6 +239,7 @@ func (l *location) buildDirManifest(dir string) {
 		log.Fatal(err)
 	}
 
+	// replace this with a filepath.Walk call
 	for _, fi := range files {
 		if fi.IsDir() {
 			l.buildDirManifest(dir + "/" + fi.Name())
@@ -249,6 +277,16 @@ func (l *location) Put(key string, f file) {
 			log.Fatal(err)
 		}
 		l.Manifest[key] = f
+	case os.FileInfo:
+		out, err := os.Create(l.Path + "/" + key)
+		defer out.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err = io.Copy(out, reader); err != nil {
+			log.Fatal(err)
+		}
+		out.Sync()
 	default:
 		log.Fatal("can't handle")
 	}
@@ -305,6 +343,7 @@ func (f *file) Open() io.ReadSeeker {
 	switch o := f.Object.(type) {
 	case os.FileInfo:
 		_ = o
+		// TODO - This never gets closed.
 		r, err := os.Open(f.Path + "/" + f.Name)
 		if err != nil {
 			log.Fatal(err)
