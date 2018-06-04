@@ -185,8 +185,13 @@ func (l *location) handleEvent(event fsnotify.Event) {
 }
 
 func constructFile(event fsnotify.Event) file {
+	var err error
 	var f file
 	f.Name = filepath.Base(event.Name)
+	f.Object, err = os.Stat(event.Name)
+	if err != nil {
+		log.Fatal(err)
+	}
 	return f
 }
 
