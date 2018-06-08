@@ -33,8 +33,7 @@ import (
 // syncer sync /tmp/boo s3://alienthtest/
 
 var noop = false
-
-var source location
+var recurse = false
 
 func main() {
 	app := cli.NewApp()
@@ -59,6 +58,10 @@ func main() {
 					Usage: "Push new config versions, but do not activate.",
 				},
 				cli.BoolFlag{
+					Name:  "recursive, r",
+					Usage: "Recurse into directories",
+				},
+				cli.BoolFlag{
 					Name:  "delete, d",
 					Usage: "Delete objects in destination that aren't present in the source.",
 				},
@@ -74,6 +77,9 @@ func main() {
 				if c.Bool("noop") {
 					log.Println("!!! Running in no-op mode.")
 					noop = true
+				}
+				if c.Bool("recurse") {
+					recurse = true
 				}
 				return nil
 			},
@@ -99,28 +105,32 @@ func sync(c *cli.Context) error {
 	destination.buildManifest()
 	destination.listManifest()
 
-	recurse := true
+	// /tmp/bar/        -> s3://alienthtest/
+	// /tmp/bar/foo     -> s3://alienthtest/foo
+	// /tmp/bar/foo/bar -> s3://alienthtest/foo/bar
 
+	oneTimeSync(c, source, destination)
+
+	source.Watch()
+	return nil
+}
+
+func (l *location) Watch() {
 	watcher, _ := fsnotify.NewWatcher()
-	watcher.Add(source.Path)
+	watcher.Add(l.Path)
 	if recurse {
-		files, err := ioutil.ReadDir(source.Path)
+		files, err := ioutil.ReadDir(l.Path)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		for _, f := range files {
 			if f.IsDir() {
-				watcher.Add(source.Path + "/" + f.Name())
+				watcher.Add(l.Path + "/" + f.Name())
 			}
 		}
 	}
 
-	// /tmp/bar/        -> s3://alienthtest/
-	// /tmp/bar/foo     -> s3://alienthtest/foo
-	// /tmp/bar/foo/bar -> s3://alienthtest/foo/bar
-
-	oneTimeSync(c, source, destination)
 	for {
 		select {
 		case event := <-watcher.Events:
@@ -131,8 +141,8 @@ func sync(c *cli.Context) error {
 				}
 				continue
 			}
-			source.handleEvent(event)
-			destination.handleEvent(event)
+			key := strings.TrimPrefix(event.Name, l.Path)
+			l.handleEvent(key, event)
 		}
 	}
 }
@@ -178,6 +188,8 @@ func getLocations(c *cli.Context) (*location, *location, error) {
 		}
 	}
 
+	results[0].Destination = &results[1]
+
 	return &results[0], &results[1], nil
 }
 
@@ -189,39 +201,34 @@ const (
 )
 
 type location struct {
-	Service  interface{}
-	Bucket   string
-	Path     string          // the base path which we manage objects from
-	Manifest map[string]file // the key is the object relative to the location's Path
-	Type     LocationType
+	Service     interface{}
+	Bucket      string
+	Path        string          // the base path which we manage objects from
+	Manifest    map[string]file // the key is the object relative to the location's Path
+	Type        LocationType
+	Destination *location
 }
 
 // How do we strip the source's path when writing things to a destination?
 // Takes in an fsnotify event and dispatches the appropriate location action depending on the event type.
-func (l *location) handleEvent(event fsnotify.Event) {
-	if l.Type == Destination {
-		switch event.Op {
-		case fsnotify.Write, fsnotify.Create:
-			f := constructFile(event)
-			key := strings.TrimPrefix(event.Name, l.Path)
-			log.Println(key, event.Name, l.Path)
-			// Need to ensure we retry this if there is a transient failure
-			l.Put(key, f)
-		case fsnotify.Remove:
-			l.Delete(event.Name)
-		}
-	} else if l.Type == Source {
+// key is the relative path of the object.
+func (l *location) handleEvent(key string, event fsnotify.Event) {
+	if l.Type == Source {
 		switch event.Op {
 		case fsnotify.Create:
 			f := constructFile(event)
-			key := strings.TrimPrefix(event.Name, l.Path)
 			l.Manifest[key] = f
+			l.Destination.Put(key, f)
+		case fsnotify.Write:
+			f := constructFile(event)
+			l.Destination.Put(key, f)
 		case fsnotify.Remove:
-			key := strings.TrimPrefix(event.Name, l.Path)
+			l.Destination.Delete(key)
 			delete(l.Manifest, key)
 		}
+	} else {
+		log.Fatal("we don't do this")
 	}
-
 }
 
 // Takes in a file-like object and returns a file.
