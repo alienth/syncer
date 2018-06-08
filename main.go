@@ -84,8 +84,11 @@ func main() {
 
 }
 
-func sync(c *cli.Context) {
-	source, destination := getLocations(c)
+func sync(c *cli.Context) error {
+	source, destination, err := getLocations(c)
+	if err != nil {
+		return err
+	}
 
 	source.buildManifest()
 	source.listManifest()
@@ -130,7 +133,7 @@ func sync(c *cli.Context) {
 }
 
 // Takes in a cli context, parses the args, and returns the source and destination locations
-func getLocations(c *cli.Context) (location, location) {
+func getLocations(c *cli.Context) (*location, *location, error) {
 	if len(c.Args()) != 2 {
 		log.Fatal("must pass 2 args")
 	}
@@ -141,6 +144,7 @@ func getLocations(c *cli.Context) (location, location) {
 		u, err := url.Parse(param)
 		log.Println(param)
 		if err != nil {
+			return nil, nil, err
 		}
 		if u.Scheme == "" {
 			// Should be a directory?
@@ -161,7 +165,7 @@ func getLocations(c *cli.Context) (location, location) {
 		}
 	}
 
-	return results[0], results[1]
+	return &results[0], &results[1], nil
 }
 
 type location struct {
@@ -323,7 +327,7 @@ func (l *location) Delete(key string) {
 	}
 }
 
-func oneTimeSync(c *cli.Context, source, destination location) {
+func oneTimeSync(c *cli.Context, source, destination *location) {
 	// for each object in the source, push it to the destination
 	for key, f := range source.Manifest {
 		if destF, ok := destination.Manifest[key]; !ok {
