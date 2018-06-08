@@ -196,6 +196,7 @@ type location struct {
 	Type     LocationType
 }
 
+// How do we strip the source's path when writing things to a destination?
 // Takes in an fsnotify event and dispatches the appropriate location action depending on the event type.
 func (l *location) handleEvent(event fsnotify.Event) {
 	if l.Type == Destination {
