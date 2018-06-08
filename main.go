@@ -131,6 +131,7 @@ func sync(c *cli.Context) error {
 				}
 				continue
 			}
+			source.handleEvent(event)
 			destination.handleEvent(event)
 		}
 	}
@@ -196,14 +197,23 @@ type location struct {
 }
 
 func (l *location) handleEvent(event fsnotify.Event) {
-	switch event.Op {
-	case fsnotify.Write, fsnotify.Create:
-		f := constructFile(event)
-		key := strings.TrimPrefix(f.Name, l.Path)
-		// Need to ensure we retry this if there is a transient failure
-		l.Put(key, f)
-	case fsnotify.Remove:
-		l.Delete(event.Name)
+	if l.Type == Destination {
+		switch event.Op {
+		case fsnotify.Write, fsnotify.Create:
+			f := constructFile(event)
+			key := strings.TrimPrefix(f.Name, l.Path)
+			// Need to ensure we retry this if there is a transient failure
+			l.Put(key, f)
+		case fsnotify.Remove:
+			l.Delete(event.Name)
+		}
+	} else if l.Type == Source {
+		switch event.Op {
+		case fsnotify.Create:
+			// TODO Add to manifest
+		case fsnotify.Remove:
+			// TODO Remove from manifest
+		}
 	}
 
 }
