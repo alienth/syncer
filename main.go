@@ -197,14 +197,15 @@ type location struct {
 }
 
 // Takes in an fsnotify event and dispatches the appropriate location action depending on the event type.
-// event's name is the relative path to the watch Path, which is location's Path
 func (l *location) handleEvent(event fsnotify.Event) {
 	if l.Type == Destination {
 		switch event.Op {
 		case fsnotify.Write, fsnotify.Create:
 			f := constructFile(event)
+			key := strings.TrimPrefix(event.Name, l.Path)
+			log.Println(key, event.Name, l.Path)
 			// Need to ensure we retry this if there is a transient failure
-			l.Put(event.Name, f)
+			l.Put(key, f)
 		case fsnotify.Remove:
 			l.Delete(event.Name)
 		}
@@ -212,9 +213,11 @@ func (l *location) handleEvent(event fsnotify.Event) {
 		switch event.Op {
 		case fsnotify.Create:
 			f := constructFile(event)
-			l.Manifest[event.Name] = f
+			key := strings.TrimPrefix(event.Name, l.Path)
+			l.Manifest[key] = f
 		case fsnotify.Remove:
-			delete(l.Manifest, event.Name)
+			key := strings.TrimPrefix(event.Name, l.Path)
+			delete(l.Manifest, key)
 		}
 	}
 
@@ -322,7 +325,7 @@ func (l *location) Put(key string, f file) {
 		out, err := os.Create(l.Path + "/" + key)
 		defer out.Close()
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("error creating:", err)
 		}
 		if _, err = io.Copy(out, reader); err != nil {
 			log.Fatal(err)
@@ -395,7 +398,7 @@ func (f *file) Open() io.ReadSeeker {
 		// TODO - This never gets closed.
 		r, err := os.Open(f.Path + "/" + f.Name)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("error opening file:", err)
 		}
 		return r
 	}
