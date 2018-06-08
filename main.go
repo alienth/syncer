@@ -192,32 +192,34 @@ type location struct {
 	Service  interface{}
 	Bucket   string
 	Path     string          // the base path which we manage objects from
-	Manifest map[string]file // the key is the object relative to the Path
+	Manifest map[string]file // the key is the object relative to the location's Path
 	Type     LocationType
 }
 
+// event's name is the relative path to the watch Path, which is location's Path
 func (l *location) handleEvent(event fsnotify.Event) {
 	if l.Type == Destination {
 		switch event.Op {
 		case fsnotify.Write, fsnotify.Create:
 			f := constructFile(event)
-			key := strings.TrimPrefix(f.Name, l.Path)
 			// Need to ensure we retry this if there is a transient failure
-			l.Put(key, f)
+			l.Put(event.Name, f)
 		case fsnotify.Remove:
 			l.Delete(event.Name)
 		}
 	} else if l.Type == Source {
 		switch event.Op {
 		case fsnotify.Create:
-			// TODO Add to manifest
+			f := constructFile(event)
+			l.Manifest[event.Name] = f
 		case fsnotify.Remove:
-			// TODO Remove from manifest
+			delete(l.Manifest, event.Name)
 		}
 	}
 
 }
 
+// Takes in a file-like object and returns a file.
 func constructFile(input interface{}) file {
 	var f file
 	switch i := input.(type) {
@@ -308,6 +310,8 @@ func (l *location) listManifest() {
 	}
 }
 
+// key is the destination relative to the location's Path.
+// f is the thing we're Puting.
 func (l *location) Put(key string, f file) {
 	reader := f.Open()
 	switch svc := l.Service.(type) {
@@ -355,6 +359,8 @@ func (l *location) Delete(key string) {
 	default:
 		log.Fatal("can't handle")
 	}
+
+	delete(l.Manifest, key)
 }
 
 func oneTimeSync(c *cli.Context, source, destination *location) {
@@ -383,8 +389,8 @@ func oneTimeSync(c *cli.Context, source, destination *location) {
 }
 
 type file struct {
-	Name         string
-	Path         string // the absolute path
+	Name         string // The basename of a file
+	Path         string // The absolute directory of a file
 	LastModified time.Time
 	Size         int
 	Object       interface{}
