@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -162,6 +163,8 @@ func getLocations(c *cli.Context) (*location, *location, error) {
 			svc := s3.New(sess)
 			loc := location{Bucket: u.Host, Service: svc}
 			results[i] = loc
+		} else {
+			return nil, nil, fmt.Errorf("Unsupported location type \"%s\" for location %s\n", u.Scheme, param)
 		}
 	}
 
