@@ -145,14 +145,19 @@ func getLocations(c *cli.Context) (*location, *location, error) {
 	results := make([]location, 2)
 
 	for i, param := range c.Args() {
+		loc := location{Path: param}
+		if i == 0 {
+			loc.Type = Source
+		} else if i == 1 {
+			loc.Type = Destination
+		}
 		u, err := url.Parse(param)
-		log.Println(param)
 		if err != nil {
 			return nil, nil, err
 		}
 		if u.Scheme == "" {
 			// Should be a directory?
-			loc := location{Path: param}
+			loc.Path = param
 			if loc.Service, err = os.Lstat(param); err != nil {
 				log.Fatal(err)
 			}
@@ -164,7 +169,8 @@ func getLocations(c *cli.Context) (*location, *location, error) {
 				log.Fatal(err)
 			}
 			svc := s3.New(sess)
-			loc := location{Bucket: u.Host, Service: svc}
+			loc.Bucket = u.Host
+			loc.Service = svc
 			results[i] = loc
 		} else {
 			return nil, nil, fmt.Errorf("Unsupported location type \"%s\" for location %s\n", u.Scheme, param)
@@ -174,11 +180,19 @@ func getLocations(c *cli.Context) (*location, *location, error) {
 	return &results[0], &results[1], nil
 }
 
+type LocationType int
+
+const (
+	Source LocationType = iota
+	Destination
+)
+
 type location struct {
 	Service  interface{}
 	Bucket   string
 	Path     string          // the base path which we manage objects from
 	Manifest map[string]file // the key is the object relative to the Path
+	Type     LocationType
 }
 
 func (l *location) handleEvent(event fsnotify.Event) {
