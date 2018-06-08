@@ -244,15 +244,6 @@ func constructFile(input interface{}) file {
 	return f
 }
 
-func (l *location) s3HandleEvent(svc *s3.S3, event fsnotify.Event) {
-	if event.Op == fsnotify.Remove {
-	} else if event.Op == fsnotify.Write || event.Op == fsnotify.Create {
-		// l.Put(
-	} else {
-		log.Println("Ignoring ", event)
-	}
-}
-
 func (l *location) buildManifest() {
 	l.Manifest = make(map[string]file)
 	switch svc := l.Service.(type) {
