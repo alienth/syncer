@@ -196,6 +196,7 @@ type location struct {
 	Type     LocationType
 }
 
+// Takes in an fsnotify event and dispatches the appropriate location action depending on the event type.
 // event's name is the relative path to the watch Path, which is location's Path
 func (l *location) handleEvent(event fsnotify.Event) {
 	if l.Type == Destination {
