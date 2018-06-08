@@ -32,6 +32,8 @@ import (
 
 // syncer sync /tmp/boo s3://alienthtest/
 
+var noop = false
+
 var source location
 
 func main() {
@@ -71,6 +73,7 @@ func main() {
 				}
 				if c.Bool("noop") {
 					log.Println("!!! Running in no-op mode.")
+					noop = true
 				}
 				return nil
 			},
